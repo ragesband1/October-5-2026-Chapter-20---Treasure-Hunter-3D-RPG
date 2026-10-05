@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chapter 20 - Treasure Hunter 3D RPG</title>
+    <!-- Tailwind CSS for modern HUD styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js for full 3D environment rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Font Awesome for crisp game icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;900&family=Inter:wght@400;600;700&display=swap');
+
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050508;
+            font-family: 'Inter', sans-serif;
+            color: #f3f4f6;
+        }
+
+        .font-cinzel {
+            font-family: 'Cinzel', serif;
+        }
+
+        #game-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Custom Scrollbars for Modals */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d97706;
+            border-radius: 3px;
+        }
+
+        /* Damage Numbers Animation */
+        .damage-num {
+            position: absolute;
+            font-weight: 900;
+            font-family: 'Cinzel', serif;
+            pointer-events: none;
+            animation: floatAndFade 1.2s cubic-bezier(0.18, 0.89, 0.32, 1.28) FORWARD;
+            text-shadow: 0 0 8px rgba(0,0,0,0.9);
+        }
+
+        @keyframes floatAndFade {
+            0% { opacity: 1; transform: translateY(0) scale(0.8); }
+            30% { opacity: 1; transform: translateY(-30px) scale(1.3); }
+            100% { opacity: 0; transform: translateY(-60px) scale(1); }
+        }
+
+        /* Gold Shimmer Effect */
+        .gold-shimmer {
+            background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #d97706 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Modal Overlay animations */
+        .modal-blur {
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 12px;
+            height: 12px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Touch Controls Virtual Joystick Area */
+        .touch-btn {
+            background: rgba(30, 41, 59, 0.7);
+            border: 2px solid rgba(217, 119, 6, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        .touch-btn:active {
+            background: rgba(217, 119, 6, 0.4);
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="relative w-full h-full select-none overflow-hidden bg-slate-950">
+
+    <!-- 3D Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Crosshair for FPS/TPS Precision -->
+    <div id="crosshair" class="hidden flex items-center justify-center opacity-70">
+        <div class="w-2 h-2 rounded-full bg-amber-400 border border-black"></div>
+    </div>
+
+    <!-- UI Overlay Layer -->
+    <div id="ui-layer" class="absolute inset-0 pointer-events-none flex flex-col justify-between p-4 z-10">
+
+        <!-- Top Header HUD (Player Vitals & Boss HP Bar) -->
+        <div class="w-full flex flex-col md:flex-row justify-between items-start gap-4">
+            
+            <!-- Player Stats Box -->
+            <div class="pointer-events-auto bg-slate-900/80 border border-amber-500/40 rounded-xl p-3 shadow-2xl backdrop-blur-md w-full max-w-sm flex flex-col gap-2">
+                <div class="flex items-center justify-between border-b border-amber-500/20 pb-2">
+                    <div class="flex items-center gap-3">
+                        <div id="player-avatar" class="w-10 h-10 rounded-lg bg-amber-600/30 border border-amber-400 flex items-center justify-center text-amber-400 text-xl font-bold font-cinzel">
+                            <i class="fa-solid fa-map"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span id="player-class-title" class="font-cinzel text-amber-400 font-bold text-sm tracking-wide">Cartographer</span>
+                                <span id="player-level" class="bg-amber-500/20 text-amber-300 text-xs px-2 py-0.5 rounded border border-amber-500/40">Lvl 1</span>
+                            </div>
+                            <div class="text-xs text-slate-400 font-medium" id="zone-indicator">Zone: Amelito Village Outpost</div>
+                        </div>
+                    </div>
+                    <button id="btn-camera" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded border border-slate-600 transition">
+                        <i class="fa-solid fa-camera"></i> <span id="camera-mode-text">3rd Person</span>
+                    </button>
+                </div>
+
+                <!-- HP Bar -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1 font-semibold">
+                        <span class="text-red-400"><i class="fa-solid fa-heart mr-1"></i>Health</span>
+                        <span id="hp-text" class="text-slate-300">100 / 100</span>
+                    </div>
+                    <div class="w-full h-3 bg-slate-950 rounded-full overflow-hidden border border-red-900/50">
+                        <div id="hp-bar" class="h-full bg-gradient-to-r from-red-600 to-rose-500 transition-all duration-300 w-full"></div>
+                    </div>
+                </div>
+
+                <!-- MP / Energy Bar -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1 font-semibold">
+                        <span class="text-sky-400"><i class="fa-solid fa-bolt mr-1"></i>Energy / Mana</span>
+                        <span id="mp-text" class="text-slate-300">50 / 50</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-slate-950 rounded-full overflow-hidden border border-sky-900/50">
+                        <div id="mp-bar" class="h-full bg-gradient-to-r from-sky-600 to-cyan-400 transition-all duration-300 w-full"></div>
+                    </div>
+                </div>
+
+                <!-- EXP Bar -->
+                <div>
+                    <div class="flex justify-between text-xs mb-0.5 text-slate-400 font-medium">
+                        <span>EXP</span>
+                        <span id="exp-text">0 / 100</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
+                        <div id="exp-bar" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 transition-all duration-300 w-0"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Boss Health Bar (Hidden by default) -->
+            <div id="boss-hp-container" class="pointer-events-none opacity-0 transition-opacity duration-500 w-full max-w-xl mx-auto bg-slate-950/90 border-2 border-amber-500 rounded-2xl p-4 shadow-2xl backdrop-blur-md flex flex-col items-center">
+                <div class="flex items-center justify-between w-full mb-2">
+                    <span class="text-amber-400 font-cinzel font-black tracking-widest text-lg flex items-center gap-2">
+                        <i class="fa-solid fa-crown text-amber-500"></i> LUCIFIA - THE GOLD MONSTER
+                    </span>
+                    <span id="boss-status-text" class="text-xs bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded border border-amber-500/40">CAMOUFLAGED</span>
+                </div>
+                <div class="w-full h-5 bg-slate-900 rounded-full overflow-hidden border border-amber-600/60 relative">
+                    <div id="boss-hp-bar" class="h-full bg-gradient-to-r from-amber-600 via-yellow-500 to-amber-300 transition-all duration-200 w-full"></div>
+                    <span id="boss-hp-text" class="absolute inset-0 flex items-center justify-center text-xs font-black text-slate-950 drop-shadow">1000 / 1000 HP</span>
+                </div>
+            </div>
+
+            <!-- Mini Map & Currency Tracker -->
+            <div class="pointer-events-auto flex flex-col items-end gap-2">
+                <!-- Minimap Container -->
+                <div class="relative w-32 h-32 md:w-40 md:h-40 rounded-2xl border-2 border-amber-500/50 bg-slate-950/90 overflow-hidden shadow-2xl">
+                    <canvas id="minimap-canvas" class="w-full h-full"></canvas>
+                    <div class="absolute top-1 left-2 text-[10px] font-bold text-amber-400/80 font-cinzel">RADAR</div>
+                </div>
+
+                <!-- Currency Counter -->
+                <div class="flex items-center gap-3 bg-slate-900/80 border border-amber-500/40 rounded-xl px-3 py-1.5 backdrop-blur-md shadow-lg">
+                    <div class="flex items-center gap-1.5 text-amber-400 font-bold text-sm">
+                        <i class="fa-solid fa-coins"></i>
+                        <span id="gold-count">0</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 text-emerald-400 font-bold text-sm">
+                        <i class="fa-solid fa-gem"></i>
+                        <span id="gem-count">0/5</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quest Tracker Widget -->
+        <div class="pointer-events-auto self-start mt-2 bg-slate-900/70 border-l-4 border-amber-500 rounded-r-xl p-3 max-w-xs backdrop-blur-md shadow-lg">
+            <div class="text-xs font-bold text-amber-400 font-cinzel uppercase tracking-wider flex items-center justify-between gap-2">
+                <span><i class="fa-solid fa-compass mr-1"></i> Current Objective</span>
+                <span class="text-[10px] text-slate-400 font-mono">[Q] Quest Log</span>
+            </div>
+            <div id="active-quest-title" class="text-sm font-bold text-slate-100 mt-1">Speak with Vioso</div>
+            <div id="active-quest-desc" class="text-xs text-slate-300 mt-0.5">Locate Old Man Vioso near Amelito Village entrance and learn about Boss Vigoria.</div>
+        </div>
+
+        <!-- Bottom Action Bar & Navigation Modals -->
+        <div class="w-full flex flex-col items-center gap-3">
+            
+            <!-- Hotkey Skill Bar -->
+            <div class="pointer-events-auto flex items-center gap-2 bg-slate-900/90 border border-amber-500/40 rounded-2xl p-2 shadow-2xl backdrop-blur-md">
+                <!-- Skill 1: Basic Attack / Slash -->
+                <button id="skill-1" class="relative group w-12 h-12 rounded-xl bg-slate-800 border border-amber-500/50 flex flex-col items-center justify-center hover:border-amber-400 transition active:scale-95">
+                    <i class="fa-solid fa-hand-fist text-amber-400 text-lg"></i>
+                    <span class="text-[9px] font-bold text-slate-400">L-Click</span>
+                    <span class="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center">1</span>
+                </button>
+
+                <!-- Skill 2: Gold Slash / Strike -->
+                <button id="skill-2" class="relative group w-12 h-12 rounded-xl bg-slate-800 border border-amber-500/50 flex flex-col items-center justify-center hover:border-amber-400 transition active:scale-95">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-400 text-lg"></i>
+                    <span class="text-[9px] font-bold text-slate-400">Skill 1</span>
+                    <span class="absolute -top-1 -right-1 bg-amber-500 text-slate-950 font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center">2</span>
+                </button>
+
+                <!-- Skill 3: Medical Doctor Heal -->
+                <button id="skill-3" class="relative group w-12 h-12 rounded-xl bg-slate-800 border border-emerald-500/50 flex flex-col items-center justify-center hover:border-emerald-400 transition active:scale-95">
+                    <i class="fa-solid fa-notes-medical text-emerald-400 text-lg"></i>
+                    <span class="text-[9px] font-bold text-slate-400">Heal</span>
+                    <span class="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center">3</span>
+                </button>
+
+                <!-- Skill 4: Dash / Dodge Roll -->
+                <button id="skill-4" class="relative group w-12 h-12 rounded-xl bg-slate-800 border border-sky-500/50 flex flex-col items-center justify-center hover:border-sky-400 transition active:scale-95">
+                    <i class="fa-solid fa-person-running text-sky-400 text-lg"></i>
+                    <span class="text-[9px] font-bold text-slate-400">Dash</span>
+                    <span class="absolute -top-1 -right-1 bg-sky-500 text-slate-950 font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center">Space</span>
+                </button>
+
+                <div class="h-8 w-px bg-slate-700 mx-1"></div>
+
+                <!-- Modal Buttons (Inventory, Quests, Skill Tree, Character) -->
+                <button id="btn-inventory" class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600 hover:border-amber-400 text-slate-200 flex items-center justify-center text-sm transition" title="Inventory [I]">
+                    <i class="fa-solid fa-briefcase"></i>
+                </button>
+                <button id="btn-quests" class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600 hover:border-amber-400 text-slate-200 flex items-center justify-center text-sm transition" title="Quests [Q]">
+                    <i class="fa-solid fa-scroll"></i>
+                </button>
+                <button id="btn-skills" class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600 hover:border-amber-400 text-slate-200 flex items-center justify-center text-sm transition" title="Skill Tree [K]">
+                    <i class="fa-solid fa-sitemap"></i>
+                </button>
+                <button id="btn-character" class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-600 hover:border-amber-400 text-slate-200 flex items-center justify-center text-sm transition" title="Character Stats [C]">
+                    <i class="fa-solid fa-user-shield"></i>
+                </button>
+            </div>
+
+            <div class="text-[11px] text-slate-400/80 font-medium hidden md:block">
+                [WASD / Arrows] Move &bull; [Mouse] Aim Camera &bull; [E] Interact &bull; [Click] Attack &bull; [Space] Dash
+            </div>
+        </div>
+    </div>
+
+    <!-- Touch Control On-Screen Joystick & Buttons (Mobile) -->
+    <div id="touch-controls" class="absolute inset-0 pointer-events-none z-20 hidden md:hidden">
+        <!-- Virtual Movement Pad -->
+        <div id="joystick-zone" class="absolute bottom-6 left-6 w-32 h-32 rounded-full bg-slate-900/40 border border-slate-600/50 pointer-events-auto flex items-center justify-center">
+            <div id="joystick-knob" class="w-12 h-12 rounded-full bg-amber-500/60 border border-amber-300"></div>
+        </div>
+        <!-- Touch Action Buttons -->
+        <div class="absolute bottom-6 right-6 flex flex-col gap-3 pointer-events-auto items-end">
+            <div class="flex gap-2">
+                <button id="touch-skill" class="touch-btn w-14 h-14 rounded-full text-amber-400 flex items-center justify-center text-xl shadow-lg">
+                    <i class="fa-solid fa-bolt"></i>
+                </button>
+                <button id="touch-heal" class="touch-btn w-14 h-14 rounded-full text-emerald-400 flex items-center justify-center text-xl shadow-lg">
+                    <i class="fa-solid fa-heart-pulse"></i>
+                </button>
+            </div>
+            <div class="flex gap-2">
+                <button id="touch-attack" class="touch-btn w-16 h-16 rounded-full text-amber-300 flex items-center justify-center text-2xl shadow-xl border-amber-400">
+                    <i class="fa-solid fa-sword"></i>
+                </button>
+                <button id="touch-interact" class="touch-btn w-14 h-14 rounded-full text-sky-300 flex items-center justify-center text-xl shadow-lg">
+                    <i class="fa-solid fa-hand"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NPC Dialog Overlay Modal -->
+    <div id="dialog-modal" class="fixed inset-0 z-50 flex items-end justify-center pb-12 px-4 bg-slate-950/60 modal-blur hidden pointer-events-auto">
+        <div class="bg-slate-900 border-2 border-amber-500/80 rounded-2xl p-6 max-w-2xl w-full shadow-2xl relative flex flex-col md:flex-row gap-6 items-center">
+            <div class="w-24 h-24 rounded-2xl bg-amber-950/60 border-2 border-amber-400 flex items-center justify-center flex-shrink-0 text-amber-400 text-4xl shadow-inner">
+                <i id="npc-portrait-icon" class="fa-solid fa-user-ninja"></i>
+            </div>
+            <div class="flex-1 flex flex-col justify-between w-full">
+                <div>
+                    <div id="npc-name" class="font-cinzel font-bold text-amber-400 text-lg tracking-wider">Old Man Vioso</div>
+                    <div id="npc-dialog-text" class="text-slate-200 text-sm mt-2 leading-relaxed h-20 overflow-y-auto pr-2">
+                        Greetings, traveller! Beware of Boss Vigoria's greed. He trades in dangerous grounds and seeks Lucifia's cursed gold!
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
+                    <button id="btn-dialog-next" class="px-5 py-2 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition shadow-lg">
+                        Continue <i class="fa-solid fa-chevron-right ml-1"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory Modal -->
+    <div id="inventory-modal" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 modal-blur hidden pointer-events-auto">
+        <div class="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h2 class="font-cinzel text-xl font-bold text-amber-400 flex items-center gap-2">
+                    <i class="fa-solid fa-briefcase"></i> Player Equipment & Backpack
+                </h2>
+                <button class="modal-close text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Equipment Slots -->
+                <div class="bg-slate-950/60 rounded-xl p-4 border border-slate-800 flex flex-col gap-3">
+                    <div class="text-xs font-bold text-amber-400/80 font-cinzel uppercase">Equipped Items</div>
+                    
+                    <div class="flex items-center gap-3 p-2 bg-slate-900 rounded-lg border border-slate-700">
+                        <div class="w-10 h-10 rounded bg-amber-500/10 border border-amber-500/40 flex items-center justify-center text-amber-400"><i class="fa-solid fa-hammer"></i></div>
+                        <div>
+                            <div class="text-xs font-bold text-slate-200" id="eq-weapon-name">Cartographer Trowel</div>
+                            <div class="text-[10px] text-slate-400">+10 Attack Power</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3 p-2 bg-slate-900 rounded-lg border border-slate-700">
+                        <div class="w-10 h-10 rounded bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-center text-emerald-400"><i class="fa-solid fa-shield-halved"></i></div>
+                        <div>
+                            <div class="text-xs font-bold text-slate-200" id="eq-armor-name">Trader Leather Vest</div>
+                            <div class="text-[10px] text-slate-400">+5 Defense Rating</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3 p-2 bg-slate-900 rounded-lg border border-slate-700">
+                        <div class="w-10 h-10 rounded bg-sky-500/10 border border-sky-500/40 flex items-center justify-center text-sky-400"><i class="fa-solid fa-ring"></i></div>
+                        <div>
+                            <div class="text-xs font-bold text-slate-200" id="eq-accessory-name">Topaz Amulet</div>
+                            <div class="text-[10px] text-slate-400">+20 Max Energy</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grid Inventory Slots -->
+                <div>
+                    <div class="text-xs font-bold text-amber-400/80 font-cinzel uppercase mb-2">Backpack Items</div>
+                    <div id="inventory-grid" class="grid grid-cols-4 gap-2">
+                        <!-- Dynamic items generated via JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quest Log Modal -->
+    <div id="quests-modal" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 modal-blur hidden pointer-events-auto">
+        <div class="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-xl w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h2 class="font-cinzel text-xl font-bold text-amber-400 flex items-center gap-2">
+                    <i class="fa-solid fa-scroll"></i> Quest Chronicles
+                </h2>
+                <button class="modal-close text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div id="quest-list-container" class="flex flex-col gap-3 max-h-80 overflow-y-auto pr-1">
+                <!-- Dynamic Quests generated in JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Skill Tree & Class Progression Modal -->
+    <div id="skills-modal" class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/80 modal-blur hidden pointer-events-auto">
+        <div class="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-4">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <div>
+                    <h2 class="font-cinzel text-xl font-bold text-amber-400 flex items-center gap-2">
+                        <i class="fa-solid fa-sitemap"></i> Class Specialization & Skills
+                    </h2>
+                    <p class="text-xs text-slate-400">Available Skill Points: <span id="skill-points-display" class="text-amber-400 font-bold">0</span></p>
+                </div>
+                <button class="modal-close text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Path A: Cartographer / Hunter -->
+                <div class="bg-slate-950/80 border border-amber-500/30 rounded-xl p-4 flex flex-col gap-3">
+                    <div class="flex items-center gap-2 text-amber-400 font-cinzel font-bold text-sm">
+                        <i class="fa-solid fa-compass"></i> Cartographer / Treasure Hunter
+                    </div>
+                    <div class="text-[11px] text-slate-300 leading-relaxed">Focus on agility, treasure hunting, and gold-blade offensive slashes.</div>
+                    
+                    <button id="upgrade-skill-1" class="w-full p-2 bg-slate-900 hover:bg-slate-800 border border-amber-500/40 rounded-lg flex justify-between items-center text-xs transition">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-bolt text-amber-400"></i>
+                            <div class="text-left">
+                                <div class="font-bold text-slate-200">Gold Slash Multiplier</div>
+                                <div class="text-[10px] text-slate-400">Increases Skill damage by +20%</div>
+                            </div>
+                        </div>
+                        <span class="text-amber-400 font-bold font-mono">Lvl <span id="sk1-lvl">1</span></span>
+                    </button>
+                </div>
+
+                <!-- Path B: Hospital Doctor -->
+                <div class="bg-slate-950/80 border border-emerald-500/30 rounded-xl p-4 flex flex-col gap-3">
+                    <div class="flex items-center gap-2 text-emerald-400 font-cinzel font-bold text-sm">
+                        <i class="fa-solid fa-user-doctor"></i> Hospital Company Doctor
+                    </div>
+                    <div class="text-[11px] text-slate-300 leading-relaxed">Reformed class guided by Vioso. Focus on recovery, medical healing, and defense.</div>
+
+                    <button id="upgrade-skill-2" class="w-full p-2 bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 rounded-lg flex justify-between items-center text-xs transition">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-notes-medical text-emerald-400"></i>
+                            <div class="text-left">
+                                <div class="font-bold text-slate-200">Surgical Healing Surge</div>
+                                <div class="text-[10px] text-slate-400">Boosts self-healing effect by +25 HP</div>
+                            </div>
+                        </div>
+                        <span class="text-emerald-400 font-bold font-mono">Lvl <span id="sk2-lvl">1</span></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* -------------------------------------------------------------------------- */
+        /*                          3D RPG GAME ENGINE CORE                           */
+        /* -------------------------------------------------------------------------- */
+
+        // Web Audio API Sound Generator for Immersive SFX
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playTone(freq, type, duration, gainVal = 0.1) {
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch (e) {}
+            }
+            swing() { this.playTone(180, 'sawtooth', 0.15, 0.08); }
+            hit() { this.playTone(80, 'square', 0.2, 0.15); }
+            gold() { 
+                this.playTone(587.33, 'sine', 0.1, 0.1); 
+                setTimeout(() => this.playTone(880, 'sine', 0.2, 0.1), 80);
+            }
+            heal() {
+                this.playTone(329.63, 'triangle', 0.2, 0.12);
+                setTimeout(() => this.playTone(523.25, 'sine', 0.3, 0.12), 150);
+            }
+            bossRoar() { this.playTone(55, 'sawtooth', 0.8, 0.25); }
+        }
+
+        const soundFx = new SoundEngine();
+
+        // Game State Core Data
+        const GameState = {
+            player: {
+                hp: 100, maxHp: 100,
+                mp: 50, maxMp: 50,
+                level: 1, exp: 0, maxExp: 100,
+                gold: 0, gemsCollected: 0,
+                attack: 15, defense: 5,
+                skillPoints: 0,
+                sk1Level: 1, sk2Level: 1,
+                classTitle: "Cartographer",
+                isDoctorUnlocked: false,
+                position: new THREE.Vector3(0, 1, 15),
+                rotation: 0
+            },
+            currentZone: "Amelito Village Outpost",
+            quests: [
+                { id: 1, title: "Speak with Old Man Vioso", desc: "Find Old Man Vioso near Amelito Village to learn about Vigoria's illegal gold digging.", status: "ACTIVE", target: "vioso" },
+                { id: 2, title: "Inspect Ground Tunnel Entrance", desc: "Board the helicopter landing pad and travel towards the creepy Ground Tunnel.", status: "LOCKED", target: "tunnel_entrance" },
+                { id: 3, title: "Clear Lucifia's Gold Minions", desc: "Defeat 3 Gold Minion Monsters guarding the cemetery tunnel.", status: "LOCKED", count: 0, required: 3 },
+                { id: 4, title: "Defeat Lucifia - The Gold Monster", desc: "Defeat Lucifia inside the deep cavern before she consumes more miners!", status: "LOCKED", target: "boss" },
+                { id: 5, title: "Reform to Hospital Company", desc: "Return to Vioso and transform your company into doctors to save lives.", status: "LOCKED", target: "vioso_end" }
+            ],
+            activeQuestIndex: 0,
+            cameraMode: "TPS", // "TPS" or "FPS"
+            keys: {},
+            touchJoystick: { active: false, x: 0, y: 0 }
+        };
+
+        // Three.js Scene Components
+        let scene, camera, renderer, clock;
+        let playerMesh, playerBodyGroup;
+        let npcs = [], enemies = [], collectibles = [], environmentObjects = [];
+        let bossEntity = null;
+        let raycaster, mouseVector;
+
+        function init3DWorld() {
+            const container = document.getElementById('game-canvas');
+
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0c14);
+            scene.fog = new THREE.FogExp2(0x0a0c14, 0.025);
+
+            // Camera Setup
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
+
+            // Renderer Setup
+            renderer = new THREE.WebGLRenderer({ canvas: container, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            clock = new THREE.Clock();
+            raycaster = new THREE.Raycaster();
+            mouseVector = new THREE.Vector2();
+
+            // Lighting Setup
+            const ambientLight = new THREE.AmbientLight(0xdbeade, 0.4);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xfef3c7, 1.0);
+            sunLight.position.set(40, 60, -20);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+
+            // Build Environment Maps (Village, Tunnel, Boss Cave)
+            buildEnvironment();
+
+            // Build Player Mesh
+            buildPlayerMesh();
+
+            // Build NPCs & Enemies
+            spawnNPCs();
+            spawnEnemies();
+            spawnGemsAndTraps();
+
+            // Resize listener
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function buildEnvironment() {
+            // Main Terrain Ground
+            const groundGeo = new THREE.PlaneGeometry(250, 250);
+            const groundMat = new THREE.MeshStandardMaterial({ 
+                color: 0x1e293b, 
+                roughness: 0.9, 
+                metalness: 0.1 
+            });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Zone 1: Amelito Village Outpost Decor (Houses & Trees)
+            for (let i = 0; i < 8; i++) {
+                const houseGroup = new THREE.Group();
+                const houseGeo = new THREE.BoxGeometry(6, 4, 6);
+                const houseMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+                const house = new THREE.Mesh(houseGeo, houseMat);
+                house.position.y = 2;
+                house.castShadow = true;
+
+                const roofGeo = new THREE.ConeGeometry(5, 3, 4);
+                const roofMat = new THREE.MeshStandardMaterial({ color: 0x991b1b });
+                const roof = new THREE.Mesh(roofGeo, roofMat);
+                roof.position.y = 5.5;
+                roof.rotation.y = Math.PI / 4;
+
+                houseGroup.add(house);
+                houseGroup.add(roof);
+
+                const angle = (i / 8) * Math.PI * 1.2 - 1;
+                houseGroup.position.set(Math.cos(angle) * 35 - 10, 0, Math.sin(angle) * 35 + 20);
+                scene.add(houseGroup);
+            }
+
+            // Helicopter Landing Pad (Story element from Chapter 20)
+            const padGeo = new THREE.CylinderGeometry(8, 8, 0.4, 32);
+            const padMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.5 });
+            const pad = new THREE.Mesh(padGeo, padMat);
+            pad.position.set(30, 0.2, 25);
+            scene.add(pad);
+
+            // Yellow 'H' on Heli Pad
+            const hGeo = new THREE.BoxGeometry(4, 0.1, 1);
+            const hMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+            const hMesh = new THREE.Mesh(hGeo, hMat);
+            hMesh.position.set(30, 0.4, 25);
+            scene.add(hMesh);
+
+            // Zone 2: Ground Tunnel Entrance Archway (Transition zone)
+            const archGroup = new THREE.Group();
+            const pillarGeo = new THREE.BoxGeometry(3, 12, 3);
+            const stoneMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+            
+            const p1 = new THREE.Mesh(pillarGeo, stoneMat);
+            p1.position.set(-10, 6, -30);
+            const p2 = new THREE.Mesh(pillarGeo, stoneMat);
+            p2.position.set(10, 6, -30);
+            const topBar = new THREE.Mesh(new THREE.BoxGeometry(23, 3, 3), stoneMat);
+            topBar.position.set(0, 11, -30);
+
+            archGroup.add(p1); archGroup.add(p2); archGroup.add(topBar);
+            scene.add(archGroup);
+
+            // Gold Tunnel Glowing Warning Text Sign
+            const signLight = new THREE.PointLight(0xd97706, 2, 25);
+            signLight.position.set(0, 8, -28);
+            scene.add(signLight);
+
+            // Zone 3: Deep Gold Mine & Lucifia's Cavern Rocks
+            for (let i = 0; i < 20; i++) {
+                const rockGeo = new THREE.DodecahedronGeometry(Math.random() * 4 + 2);
+                const rockMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, roughness: 0.7 });
+                const rock = new THREE.Mesh(rockGeo, rockMat);
+                const rAngle = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 40 + 50;
+                rock.position.set(Math.cos(rAngle) * dist, 2, -60 - Math.sin(rAngle) * 30);
+                scene.add(rock);
+            }
+
+            // Glowing Gold Veins inside the Cavern
+            for (let i = 0; i < 12; i++) {
+                const goldGeo = new THREE.OctahedronGeometry(1.2);
+                const goldMat = new THREE.MeshStandardMaterial({ 
+                    color: 0xf59e0b, 
+                    emissive: 0xd97706, 
+                    emissiveIntensity: 0.8,
+                    metalness: 0.9 
+                });
+                const goldOre = new THREE.Mesh(goldGeo, goldMat);
+                goldOre.position.set((Math.random() - 0.5) * 60, 1.5, -70 - Math.random() * 40);
+                scene.add(goldOre);
+            }
+        }
+
+        function buildPlayerMesh() {
+            playerBodyGroup = new THREE.Group();
+
+            // Torso
+            const torsoGeo = new THREE.BoxGeometry(1.2, 1.8, 0.8);
+            const torsoMat = new THREE.MeshStandardMaterial({ color: 0x2563eb }); // Cartographer Blue
+            const torso = new THREE.Mesh(torsoGeo, torsoMat);
+            torso.position.y = 1.8;
+            torso.castShadow = true;
+            playerBodyGroup.add(torso);
+
+            // Head
+            const headGeo = new THREE.SphereGeometry(0.5, 16, 16);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0xfde047 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 3.0;
+            head.castShadow = true;
+            playerBodyGroup.add(head);
+
+            // Trowel / Gold Weapon in Hand
+            const weaponGeo = new THREE.BoxGeometry(0.2, 1.2, 0.3);
+            const weaponMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.2 });
+            const weapon = new THREE.Mesh(weaponGeo, weaponMat);
+            weapon.position.set(0.8, 1.8, 0.5);
+            weapon.rotation.x = Math.PI / 4;
+            playerBodyGroup.add(weapon);
+
+            playerBodyGroup.position.copy(GameState.player.position);
+            scene.add(playerBodyGroup);
+            playerMesh = playerBodyGroup;
+        }
+
+        function spawnNPCs() {
+            // Old Man Vioso NPC
+            const viosoGroup = new THREE.Group();
+            const body = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.6, 0.8, 2.2, 16),
+                new THREE.MeshStandardMaterial({ color: 0x047857 }) // Green Robe
+            );
+            body.position.y = 1.1;
+            
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(0.5, 16, 16),
+                new THREE.MeshStandardMaterial({ color: 0xfed7aa })
+            );
+            head.position.y = 2.4;
+
+            // Old Man Beard
+            const beard = new THREE.Mesh(
+                new THREE.ConeGeometry(0.4, 0.8, 12),
+                new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+            );
+            beard.position.set(0, 2.1, 0.4);
+            beard.rotation.x = Math.PI / 6;
+
+            viosoGroup.add(body); viosoGroup.add(head); viosoGroup.add(beard);
+            viosoGroup.position.set(0, 0, 8);
+            scene.add(viosoGroup);
+
+            npcs.push({
+                name: "Old Man Vioso",
+                mesh: viosoGroup,
+                type: "VIOSO",
+                interactRadius: 4.5
+            });
+
+            // Glowing Indicator Ring under Vioso
+            const ringGeo = new THREE.RingGeometry(1, 1.3, 32);
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(0, 0.05, 8);
+            scene.add(ring);
+        }
+
+        function spawnEnemies() {
+            // Gold Minion Crawlers inside Tunnel
+            const enemySpawns = [
+                { x: -12, z: -45 }, { x: 12, z: -48 }, { x: 0, z: -60 }
+            ];
+
+            enemySpawns.forEach((sp, idx) => {
+                const minionGeo = new THREE.OctahedronGeometry(1.5);
+                const minionMat = new THREE.MeshStandardMaterial({ 
+                    color: 0xd97706, 
+                    metalness: 0.8, 
+                    roughness: 0.2 
+                });
+                const minion = new THREE.Mesh(minionGeo, minionMat);
+                minion.position.set(sp.x, 1.5, sp.z);
+                minion.castShadow = true;
+                scene.add(minion);
+
+                enemies.push({
+                    id: idx,
+                    name: "Gold Crawler Minion",
+                    mesh: minion,
+                    hp: 50, maxHp: 50,
+                    attack: 8,
+                    alive: true,
+                    isBoss: false
+                });
+            });
+
+            // Boss: Lucifia - The Gold Monster (Deep Cavern)
+            const bossGroup = new THREE.Group();
+            const bossCoreGeo = new THREE.IcosahedronGeometry(3.5, 1);
+            // Camouflaged Gold Material (Invisibility blend)
+            const bossMat = new THREE.MeshPhysicalMaterial({
+                color: 0xfbbf24,
+                metalness: 1.0,
+                roughness: 0.1,
+                transmission: 0.6, // Semi-transparent stealth mode initially
+                opacity: 0.8,
+                transparent: true
+            });
+            const bossCore = new THREE.Mesh(bossCoreGeo, bossMat);
+            bossCore.position.y = 4;
+            bossGroup.add(bossCore);
+
+            bossGroup.position.set(0, 0, -95);
+            scene.add(bossGroup);
+
+            bossEntity = {
+                name: "Lucifia - The Gold Monster",
+                mesh: bossGroup,
+                coreMesh: bossCore,
+                hp: 800, maxHp: 800,
+                attack: 22,
+                alive: true,
+                isBoss: true,
+                state: "SLEEPING" // "SLEEPING", "CAMOUFLAGED", "ENRAGED"
+            };
+        }
+
+        function spawnGemsAndTraps() {
+            const gemPositions = [
+                { x: -18, z: 10 }, { x: 22, z: -15 }, { x: -8, z: -40 }, { x: 18, z: -65 }, { x: -15, z: -85 }
+            ];
+
+            gemPositions.forEach((pos, i) => {
+                const gemGeo = new THREE.OctahedronGeometry(0.8);
+                const gemMat = new THREE.MeshStandardMaterial({ color: 0x10b981, emissive: 0x059669, emissiveIntensity: 0.6 });
+                const gem = new THREE.Mesh(gemGeo, gemMat);
+                gem.position.set(pos.x, 1.2, pos.z);
+                scene.add(gem);
+
+                collectibles.push({
+                    id: i,
+                    mesh: gem,
+                    collected: false
+                });
+            });
+        }
+
+        function setupInputListeners() {
+            window.addEventListener('keydown', (e) => {
+                GameState.keys[e.key.toLowerCase()] = true;
+                if (e.key === '1') triggerSkill(1);
+                if (e.key === '2') triggerSkill(2);
+                if (e.key === '3') triggerSkill(3);
+                if (e.key.toLowerCase() === 'e') interactWithNearest();
+                if (e.key.toLowerCase() === 'i') toggleModal('inventory-modal');
+                if (e.key.toLowerCase() === 'q') toggleModal('quests-modal');
+                if (e.key.toLowerCase() === 'k') toggleModal('skills-modal');
+                if (e.key.toLowerCase() === ' ') playerDash();
+            });
+
+            window.addEventListener('keyup', (e) => {
+                GameState.keys[e.key.toLowerCase()] = false;
+            });
+
+            // Canvas Click for Attack
+            document.getElementById('game-canvas').addEventListener('pointerdown', (e) => {
+                if (e.button === 0) { // Left Click
+                    playerAttack();
+                }
+            });
+
+            // Camera Mode Toggle Button
+            document.getElementById('btn-camera').addEventListener('click', () => {
+                GameState.cameraMode = GameState.cameraMode === "TPS" ? "FPS" : "TPS";
+                document.getElementById('camera-mode-text').innerText = GameState.cameraMode === "TPS" ? "3rd Person" : "1st Person";
+            });
+
+            // Modal Trigger Buttons
+            document.getElementById('btn-inventory').onclick = () => toggleModal('inventory-modal');
+            document.getElementById('btn-quests').onclick = () => toggleModal('quests-modal');
+            document.getElementById('btn-skills').onclick = () => toggleModal('skills-modal');
+
+            // Close Modals
+            document.querySelectorAll('.modal-close').forEach(btn => {
+                btn.onclick = (e) => {
+                    e.target.closest('.fixed').classList.add('hidden');
+                };
+            });
+
+            // Dialog Next Button
+            document.getElementById('btn-dialog-next').onclick = () => advanceDialog();
+
+            // Mobile Touch Controls Joystick Logic
+            setupTouchControls();
+        }
+
+        function setupTouchControls() {
+            const joystickZone = document.getElementById('joystick-zone');
+            const knob = document.getElementById('joystick-knob');
+            if (!joystickZone) return;
+
+            let touchId = null;
+            let startX = 0, startY = 0;
+
+            joystickZone.addEventListener('touchstart', (e) => {
+                const touch = e.changedTouches[0];
+                touchId = touch.identifier;
+                startX = touch.clientX;
+                startY = touch.clientY;
+                GameState.touchJoystick.active = true;
+            });
+
+            window.addEventListener('touchmove', (e) => {
+                if (!GameState.touchJoystick.active) return;
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === touchId) {
+                        const dx = touch.clientX - startX;
+                        const dy = touch.clientY - startY;
+                        const dist = Math.min(Math.hypot(dx, dy), 40);
+                        const angle = Math.atan2(dy, dx);
+                        
+                        knob.style.transform = `translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist}px)`;
+                        
+                        GameState.touchJoystick.x = Math.cos(angle) * (dist / 40);
+                        GameState.touchJoystick.y = Math.sin(angle) * (dist / 40);
+                    }
+                }
+            });
+
+            const resetJoystick = () => {
+                GameState.touchJoystick.active = false;
+                GameState.touchJoystick.x = 0;
+                GameState.touchJoystick.y = 0;
+                knob.style.transform = `translate(0px, 0px)`;
+            };
+
+            window.addEventListener('touchend', resetJoystick);
+            window.addEventListener('touchcancel', resetJoystick);
+
+            // Touch Action Buttons
+            document.getElementById('touch-attack').onclick = () => playerAttack();
+            document.getElementById('touch-skill').onclick = () => triggerSkill(2);
+            document.getElementById('touch-heal').onclick = () => triggerSkill(3);
+            document.getElementById('touch-interact').onclick = () => interactWithNearest();
+        }
+
+        function updatePlayerMovement(delta) {
+            const moveSpeed = 12 * delta;
+            let dx = 0, dz = 0;
+
+            // Keyboard input
+            if (GameState.keys['w'] || GameState.keys['arrowup']) dz -= 1;
+            if (GameState.keys['s'] || GameState.keys['arrowdown']) dz += 1;
+            if (GameState.keys['a'] || GameState.keys['arrowleft']) dx -= 1;
+            if (GameState.keys['d'] || GameState.keys['arrowright']) dx += 1;
+
+            // Touch Joystick input
+            if (GameState.touchJoystick.active) {
+                dx = GameState.touchJoystick.x;
+                dz = GameState.touchJoystick.y;
+            }
+
+            if (dx !== 0 || dz !== 0) {
+                const moveVec = new THREE.Vector3(dx, 0, dz).normalize().multiplyScalar(moveSpeed);
+                GameState.player.position.add(moveVec);
+                
+                // Rotation towards movement direction
+                const targetAngle = Math.atan2(dx, dz);
+                playerMesh.rotation.y = THREE.MathUtils.lerp(playerMesh.rotation.y, targetAngle, 0.15);
+            }
+
+            playerMesh.position.copy(GameState.player.position);
+
+            // Dynamic Camera Follow
+            if (GameState.cameraMode === "TPS") {
+                camera.position.set(
+                    GameState.player.position.x,
+                    GameState.player.position.y + 7,
+                    GameState.player.position.z + 12
+                );
+                camera.lookAt(GameState.player.position.x, GameState.player.position.y + 1.5, GameState.player.position.z);
+            } else { // FPS View
+                camera.position.set(
+                    GameState.player.position.x,
+                    GameState.player.position.y + 2.8,
+                    GameState.player.position.z
+                );
+                camera.lookAt(
+                    GameState.player.position.x + Math.sin(playerMesh.rotation.y) * 10,
+                    GameState.player.position.y + 2.8,
+                    GameState.player.position.z + Math.cos(playerMesh.rotation.y) * 10
+                );
+            }
+
+            // Update Zone Indicator based on position
+            if (GameState.player.position.z > -20) {
+                updateZone("Amelito Village Outpost");
+            } else if (GameState.player.position.z > -70) {
+                updateZone("Ground Tunnel Cemetery");
+            } else {
+                updateZone("Lucifia's Gold Cavern");
+            }
+        }
+
+        function updateZone(zoneName) {
+            if (GameState.currentZone !== zoneName) {
+                GameState.currentZone = zoneName;
+                document.getElementById('zone-indicator').innerText = "Zone: " + zoneName;
+            }
+        }
+
+        function playerAttack() {
+            soundFx.swing();
+            
+            // Swing Weapon Animation
+            const weaponMesh = playerMesh.children[2];
+            if (weaponMesh) {
+                weaponMesh.rotation.x += Math.PI / 2;
+                setTimeout(() => { weaponMesh.rotation.x -= Math.PI / 2; }, 150);
+            }
+
+            // Check hit against nearby enemies
+            enemies.forEach(enemy => {
+                if (!enemy.alive) return;
+                const dist = playerMesh.position.distanceTo(enemy.mesh.position);
+                if (dist < 4.5) {
+                    const dmg = GameState.player.attack + Math.floor(Math.random() * 5);
+                    enemy.hp -= dmg;
+                    soundFx.hit();
+                    showDamageNumber(dmg, enemy.mesh.position, "#fbbf24");
+
+                    if (enemy.hp <= 0) {
+                        enemy.alive = false;
+                        scene.remove(enemy.mesh);
+                        addExp(35);
+                        addGold(25);
+                        
+                        // Quest 3 Counter update
+                        const q = GameState.quests[2];
+                        if (q.status === "ACTIVE") {
+                            q.count = (q.count || 0) + 1;
+                            if (q.count >= q.required) {
+                                completeQuest(q);
+                            } else {
+                                updateQuestHUD();
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Check hit against Lucifia Boss
+            if (bossEntity && bossEntity.alive) {
+                const dist = playerMesh.position.distanceTo(bossEntity.mesh.position);
+                if (dist < 7.0) {
+                    // Reveal boss if sleeping/camouflaged
+                    if (bossEntity.state === "SLEEPING") {
+                        bossEntity.state = "ENRAGED";
+                        document.getElementById('boss-status-text').innerText = "ENRAGED";
+                        document.getElementById('boss-hp-container').classList.remove('opacity-0');
+                        soundFx.bossRoar();
+                    }
+
+                    const dmg = GameState.player.attack + Math.floor(Math.random() * 8);
+                    bossEntity.hp -= dmg;
+                    soundFx.hit();
+                    showDamageNumber(dmg, bossEntity.mesh.position, "#f59e0b");
+                    updateBossHPBar();
+
+                    if (bossEntity.hp <= 0) {
+                        bossEntity.alive = false;
+                        scene.remove(bossEntity.mesh);
+                        addExp(300);
+                        addGold(200);
+                        document.getElementById('boss-hp-container').classList.add('opacity-0');
+                        completeQuest(GameState.quests[3]);
+                    }
+                }
+            }
+        }
+
+        function triggerSkill(skillIndex) {
+            if (skillIndex === 1) { // Basic Attack
+                playerAttack();
+            } else if (skillIndex === 2) { // Gold Slash Special
+                if (GameState.player.mp >= 15) {
+                    GameState.player.mp -= 15;
+                    updateVitalsHUD();
+                    soundFx.gold();
+                    
+                    // AOE Attack in radius
+                    enemies.forEach(enemy => {
+                        if (enemy.alive && playerMesh.position.distanceTo(enemy.mesh.position) < 8.0) {
+                            const dmg = GameState.player.attack * 2 * GameState.player.sk1Level;
+                            enemy.hp -= dmg;
+                            showDamageNumber(dmg, enemy.mesh.position, "#facc15");
+                        }
+                    });
+                }
+            } else if (skillIndex === 3) { // Hospital Medical Heal
+                if (GameState.player.mp >= 20) {
+                    GameState.player.mp -= 20;
+                    const healAmt = 30 + (GameState.player.sk2Level * 15);
+                    GameState.player.hp = Math.min(GameState.player.maxHp, GameState.player.hp + healAmt);
+                    updateVitalsHUD();
+                    soundFx.heal();
+                    showDamageNumber("+" + healAmt + " HP", playerMesh.position, "#10b981");
+                }
+            }
+        }
+
+        function playerDash() {
+            soundFx.swing();
+            const dashVec = new THREE.Vector3(
+                Math.sin(playerMesh.rotation.y) * 6,
+                0,
+                Math.cos(playerMesh.rotation.y) * 6
+            );
+            GameState.player.position.add(dashVec);
+        }
+
+        function showDamageNumber(text, worldPos, color = "#ffffff") {
+            const screenPos = worldPos.clone().project(camera);
+            const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
+
+            const el = document.createElement('div');
+            el.className = "damage-num";
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            el.style.color = color;
+            el.innerText = text;
+
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1200);
+        }
+
+        function interactWithNearest() {
+            npcs.forEach(npc => {
+                const dist = playerMesh.position.distanceTo(npc.mesh.position);
+                if (dist <= npc.interactRadius) {
+                    triggerNPCDialog(npc);
+                }
+            });
+
+            // Check Collectibles pickup
+            collectibles.forEach(gem => {
+                if (!gem.collected && playerMesh.position.distanceTo(gem.mesh.position) < 2.5) {
+                    gem.collected = true;
+                    scene.remove(gem.mesh);
+                    GameState.player.gemsCollected++;
+                    soundFx.gold();
+                    document.getElementById('gem-count').innerText = `${GameState.player.gemsCollected}/5`;
+                }
+            });
+        }
+
+        function triggerNPCDialog(npc) {
+            soundFx.init();
+            const modal = document.getElementById('dialog-modal');
+            const nameEl = document.getElementById('npc-name');
+            const textEl = document.getElementById('npc-dialog-text');
+
+            nameEl.innerText = npc.name;
+            modal.classList.remove('hidden');
+
+            const currentQuest = GameState.quests[GameState.activeQuestIndex];
+
+            if (currentQuest.id === 1) {
+                textEl.innerText = "Listen well, traveller! Boss Vigoria is leading his Trading Company into the dark Ground Tunnel to dig for forbidden gold. But that gold belongs to Lucifia, The Gold Monster! You must proceed to the Helicopter pad and stop them before it is too late!";
+                completeQuest(currentQuest);
+            } else if (currentQuest.id === 5) {
+                textEl.innerText = "You saved us from Lucifia! Now, as we promised, we will abandon the gold trade and reform our company into the Hospital Company! You are now a licensed Doctor!";
+                completeQuest(currentQuest);
+                unlockDoctorClass();
+            } else {
+                textEl.innerText = "Be careful in the ground tunnel! Do not let greed lure you into touching Lucifia's camouflaged gold traps!";
+            }
+        }
+
+        function advanceDialog() {
+            document.getElementById('dialog-modal').classList.add('hidden');
+        }
+
+        function completeQuest(quest) {
+            quest.status = "COMPLETED";
+            addExp(100);
+            addGold(50);
+
+            // Activate next quest in sequence
+            const nextIdx = GameState.quests.findIndex(q => q.status === "LOCKED");
+            if (nextIdx !== -1) {
+                GameState.quests[nextIdx].status = "ACTIVE";
+                GameState.activeQuestIndex = nextIdx;
+            }
+            updateQuestHUD();
+        }
+
+        function unlockDoctorClass() {
+            GameState.player.classTitle = "Hospital Doctor";
+            GameState.player.isDoctorUnlocked = true;
+            document.getElementById('player-class-title').innerText = "Hospital Doctor";
+            document.getElementById('player-avatar').innerHTML = `<i class="fa-solid fa-user-doctor text-emerald-400"></i>`;
+        }
+
+        function addExp(amount) {
+            GameState.player.exp += amount;
+            if (GameState.player.exp >= GameState.player.maxExp) {
+                GameState.player.level++;
+                GameState.player.exp -= GameState.player.maxExp;
+                GameState.player.maxExp = Math.floor(GameState.player.maxExp * 1.5);
+                GameState.player.skillPoints++;
+                GameState.player.maxHp += 20;
+                GameState.player.hp = GameState.player.maxHp;
+                
+                document.getElementById('skill-points-display').innerText = GameState.player.skillPoints;
+                showDamageNumber("LEVEL UP!", playerMesh.position, "#f59e0b");
+            }
+            updateVitalsHUD();
+        }
+
+        function addGold(amount) {
+            GameState.player.gold += amount;
+            document.getElementById('gold-count').innerText = GameState.player.gold;
+        }
+
+        function updateVitalsHUD() {
+            document.getElementById('player-level').innerText = "Lvl " + GameState.player.level;
+            document.getElementById('hp-text').innerText = `${Math.ceil(GameState.player.hp)} / ${GameState.player.maxHp}`;
+            document.getElementById('hp-bar').style.width = `${(GameState.player.hp / GameState.player.maxHp) * 100}%`;
+
+            document.getElementById('mp-text').innerText = `${Math.ceil(GameState.player.mp)} / ${GameState.player.maxMp}`;
+            document.getElementById('mp-bar').style.width = `${(GameState.player.mp / GameState.player.maxMp) * 100}%`;
+
+            document.getElementById('exp-text').innerText = `${GameState.player.exp} / ${GameState.player.maxExp}`;
+            document.getElementById('exp-bar').style.width = `${(GameState.player.exp / GameState.player.maxExp) * 100}%`;
+        }
+
+        function updateQuestHUD() {
+            const activeQuest = GameState.quests[GameState.activeQuestIndex] || GameState.quests[GameState.quests.length - 1];
+            document.getElementById('active-quest-title').innerText = activeQuest.title;
+            
+            let desc = activeQuest.desc;
+            if (activeQuest.required) {
+                desc += ` (${activeQuest.count || 0}/${activeQuest.required})`;
+            }
+            document.getElementById('active-quest-desc').innerText = desc;
+
+            // Render Quest Modal List
+            const listContainer = document.getElementById('quest-list-container');
+            listContainer.innerHTML = GameState.quests.map(q => `
+                <div class="p-3 bg-slate-950/70 border ${q.status === 'ACTIVE' ? 'border-amber-500' : 'border-slate-800'} rounded-xl flex justify-between items-center">
+                    <div>
+                        <div class="text-xs font-bold ${q.status === 'COMPLETED' ? 'text-emerald-400 line-through' : 'text-slate-200'}">${q.title}</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5">${q.desc}</div>
+                    </div>
+                    <span class="text-[10px] font-bold px-2 py-0.5 rounded ${q.status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-400' : q.status === 'ACTIVE' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-500'}">${q.status}</span>
+                </div>
+            `).join('');
+        }
+
+        function updateBossHPBar() {
+            if (!bossEntity) return;
+            const pct = Math.max(0, (bossEntity.hp / bossEntity.maxHp) * 100);
+            document.getElementById('boss-hp-bar').style.width = `${pct}%`;
+            document.getElementById('boss-hp-text').innerText = `${Math.ceil(bossEntity.hp)} / ${bossEntity.maxHp} HP`;
+        }
+
+        function toggleModal(id) {
+            const el = document.getElementById(id);
+            el.classList.toggle('hidden');
+        }
+
+        function renderMinimap() {
+            const miniCanvas = document.getElementById('minimap-canvas');
+            const ctx = miniCanvas.getContext('2d');
+            miniCanvas.width = miniCanvas.clientWidth;
+            miniCanvas.height = miniCanvas.clientHeight;
+
+            ctx.fillStyle = "#020617";
+            ctx.fillRect(0, 0, miniCanvas.width, miniCanvas.height);
+
+            const centerX = miniCanvas.width / 2;
+            const centerY = miniCanvas.height / 2;
+            const scale = 0.8;
+
+            // Draw Radar Grid lines
+            ctx.strokeStyle = "rgba(217, 119, 6, 0.15)";
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 30, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, 55, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw Player Marker
+            ctx.fillStyle = "#f59e0b";
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw NPCs
+            npcs.forEach(npc => {
+                const relX = (npc.mesh.position.x - GameState.player.position.x) * scale;
+                const relZ = (npc.mesh.position.z - GameState.player.position.z) * scale;
+                ctx.fillStyle = "#10b981"; // Emerald green for friendly
+                ctx.beginPath();
+                ctx.arc(centerX + relX, centerY + relZ, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Enemies
+            enemies.forEach(e => {
+                if (!e.alive) return;
+                const relX = (e.mesh.position.x - GameState.player.position.x) * scale;
+                const relZ = (e.mesh.position.z - GameState.player.position.z) * scale;
+                ctx.fillStyle = "#ef4444"; // Red for enemies
+                ctx.beginPath();
+                ctx.arc(centerX + relX, centerY + relZ, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Boss Marker
+            if (bossEntity && bossEntity.alive) {
+                const relX = (bossEntity.mesh.position.x - GameState.player.position.x) * scale;
+                const relZ = (bossEntity.mesh.position.z - GameState.player.position.z) * scale;
+                ctx.fillStyle = "#facc15";
+                ctx.beginPath();
+                ctx.arc(centerX + relX, centerY + relZ, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Main Game Loop Animation Cycle
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+
+            // Update Movement & Physics
+            updatePlayerMovement(delta);
+
+            // Rotate Gems & Boss Gold Core
+            collectibles.forEach(gem => {
+                if (!gem.collected) gem.mesh.rotation.y += 1.5 * delta;
+            });
+
+            if (bossEntity && bossEntity.alive) {
+                bossEntity.coreMesh.rotation.x += 0.5 * delta;
+                bossEntity.coreMesh.rotation.y += 0.8 * delta;
+
+                // Boss AI Follow & Attack Player if Enraged
+                if (bossEntity.state === "ENRAGED") {
+                    const dir = new THREE.Vector3().subVectors(GameState.player.position, bossEntity.mesh.position).normalize();
+                    bossEntity.mesh.position.add(dir.multiplyScalar(5 * delta));
+
+                    // Boss Attack player if close
+                    if (GameState.player.position.distanceTo(bossEntity.mesh.position) < 4.0) {
+                        GameState.player.hp -= 15 * delta;
+                        updateVitalsHUD();
+                        if (GameState.player.hp <= 0) {
+                            // Player Defeated Respawn
+                            GameState.player.hp = GameState.player.maxHp;
+                            GameState.player.position.set(0, 1, 15);
+                            showDamageNumber("RESPAWNED AT VILLAGE", GameState.player.position, "#ef4444");
+                        }
+                    }
+                }
+            }
+
+            // Render 3D Scene & Minimap Radar
+            renderer.render(scene, camera);
+            renderMinimap();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Initialize Everything when Window Loads
+        window.onload = function() {
+            init3DWorld();
+            setupInputListeners();
+            updateQuestHUD();
+            updateVitalsHUD();
+            animate();
+        };
+    </script>
+</body>
+</html>
